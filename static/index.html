@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Analysis Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+
+  <body data-theme="dark">
+    <div class="container">
+      <header>
+        <div class="header-left">
+          <label for="csvUpload" class="action-btn" title="Import CSV">
+            <i class="fas fa-file-import"></i> <span>Import</span>
+          </label>
+          <input
+            type="file"
+            id="csvUpload"
+            accept=".csv"
+            style="display: none"
+          />
+
+          <button
+            class="action-btn"
+            id="exportBtn"
+            title="Export Processed Data"
+          >
+            <i class="fas fa-file-export"></i> <span>Export</span>
+          </button>
+        </div>
+
+        <h1 class="main-title">Stock Analysis Dashboard</h1>
+
+        <div class="header-right">
+          <div class="theme-controls">
+            <button class="theme-btn" id="themeToggle">
+              <i class="fas fa-moon"></i>
+            </button>
+            <div class="bg-picker-container">
+              <i class="fas fa-palette"></i>
+              <input
+                type="color"
+                id="bgColorPicker"
+                class="color-picker-input"
+              />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <aside class="controls-panel">
+          <h2>Controls</h2>
+          <div class="control-group">
+            <label>Select Stock</label>
+            <select id="stock-select"></select>
+          </div>
+          <div class="control-group">
+            <label>Start Date</label>
+            <input type="date" id="start-date" class="date-input" />
+          </div>
+          <div class="control-group">
+            <label>End Date</label>
+            <input type="date" id="end-date" class="date-input" />
+          </div>
+          <div class="divider"></div>
+          <div id="parametersContainer"></div>
+
+          <div
+            class="stock-chart-preview"
+            id="stockChartPreview"
+            title="Click to enlarge"
+          >
+            <div
+              style="
+                font-size: 0.7rem;
+                color: var(--text-secondary);
+                margin-bottom: 2px;
+                text-align: center;
+              "
+            >
+              Stock Data Chart
+            </div>
+            <canvas id="miniStockChart"></canvas>
+            <button class="fullscreen-btn" id="fullscreenBtn">
+              <i class="fas fa-expand"></i>
+            </button>
+          </div>
+        </aside>
+
+        <section class="chart-section">
+          <div class="chart-options">
+            <div class="btn-group">
+              <button class="chart-type-btn active" data-type="line">
+                Line
+              </button>
+              <button class="chart-type-btn" data-type="scatter">Dot</button>
+              <button class="chart-type-btn" data-type="dash">Dash</button>
+            </div>
+          </div>
+          <div class="chart-panel">
+            <canvas id="stockChart"></canvas>
+          </div>
+          <div class="page-navigation">
+            <button class="nav-btn" id="prevPage">
+              <i class="fas fa-chevron-left"></i>
+            </button>
+            <span class="page-indicator" id="pageIndicator">Page 1 of 4</span>
+            <button class="nav-btn" id="nextPage">
+              <i class="fas fa-chevron-right"></i>
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="stock-chart-modal" id="stockChartModal">
+      <button class="close-btn" id="closeModalBtn">&times;</button>
+      <div class="modal-content">
+        <h2
+          style="
+            margin-bottom: 15px;
+            text-align: center;
+            color: var(--text-primary);
+          "
+        >
+          Stock Data Chart
+        </h2>
+        <canvas id="fullStockChart"></canvas>
+        <button class="back-btn" id="backToDashboardBtn">
+          Back to Dashboard
+        </button>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

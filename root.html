@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analysis Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" onerror="alert('Chart.js failed to load')"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div id="css-check"
+        style="display:none; background: yellow; color: black; padding: 5px; text-align: center; font-weight: bold;">
+        CSS LOADED
+    </div>
+
+    <div id="js-check" style="background: red; color: white; padding: 10px; text-align: center; font-weight: bold;">
+        JAVASCRIPT NOT RUNNING (PLEASE REFRESH)
+    </div>
+
+    <div class="container" id="app-container" style="visibility: hidden;">
+        <header>
+            <div class="header-main">
+                <div class="header-actions">
+                    <label for="csvUpload" class="action-btn" title="Import CSV">
+                        <i class="fas fa-file-import"></i> <span>Import</span>
+                    </label>
+                    <input type="file" id="csvUpload" accept=".csv" style="display: none;">
+                    <button class="action-btn" id="exportBtn" title="Export Processed Data">
+                        <i class="fas fa-file-export"></i> <span>Export</span>
+                    </button>
+                </div>
+                <div class="header-title">
+                    <h1>Stock Analysis Dashboard</h1>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="theme-controls">
+                    <button class="theme-btn" id="themeToggle" title="Toggle Theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <div class="bg-picker-container" title="Change Background color">
+                        <i class="fas fa-palette"></i>
+                        <input type="color" id="bgColorPicker" class="color-picker-input">
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="dashboard-grid">
+            <aside class="controls-panel">
+                <h2>Controls</h2>
+                <div class="control-group">
+                    <label for="stock-select">Select Stock</label>
+                    <select id="stock-select">
+                        <option value="" disabled selected>Loading stocks...</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="start-date">Start Date</label>
+                    <input type="date" id="start-date" class="date-input">
+                </div>
+                <div class="control-group">
+                    <label for="end-date">End Date</label>
+                    <input type="date" id="end-date" class="date-input">
+                </div>
+                <div class="divider"></div>
+                <div id="parametersContainer"></div>
+            </aside>
+
+            <section class="chart-section">
+                <div class="chart-options">
+                    <button class="chart-type-btn active" data-type="line">Line</button>
+                    <button class="chart-type-btn" data-type="scatter">Dot</button>
+                    <button class="chart-type-btn" data-type="dash">Dash</button>
+                </div>
+                <div class="chart-panel">
+                    <canvas id="stockChart"></canvas>
+                </div>
+                <div class="page-navigation">
+                    <button class="nav-btn" id="prevPage">Prev</button>
+                    <span class="page-indicator" id="pageIndicator">Page 1 of 4</span>
+                    <button class="nav-btn" id="nextPage">Next</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="stock-chart-preview" id="stockChartPreview">
+        <canvas id="miniStockChart"></canvas>
+        <button class="fullscreen-btn" id="fullscreenBtn"><i class="fas fa-expand"></i></button>
+    </div>
+
+    <div class="stock-chart-modal" id="stockChartModal">
+        <button class="close-btn" id="closeModalBtn">&times;</button>
+        <div class="modal-content">
+            <canvas id="fullStockChart"></canvas>
+            <button class="back-btn" id="backToDashboardBtn">Back to Dashboard</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
