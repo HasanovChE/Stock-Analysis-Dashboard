@@ -9,28 +9,25 @@ let AUTH_TOKEN = localStorage.getItem('token');
 
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? ''
-    : 'https://stock-analysis-backend-h6u5.onrender.com'; // Placeholder, user will need to update this
+    : 'https://your-service-name.onrender.com'; // Replace 'your-service-name' with your actual Render URL
 
 const parameterValues = {
     ma_window: 30, ema_span: 14, rsi_window: 14,
     bb_window: 20, bb_std: 2.0, atr_window: 14,
-    sma_window: 20, std_window: 20, macd_fast: 12, macd_slow: 26, macd_signal: 9,
-    williams_window: 14
+    sma_window: 20, std_window: 20, macd_fast: 12, macd_slow: 26, macd_signal: 9
 };
 
 const parameterColors = {
     ma_window: '#3b82f6', ema_span: '#a855f7', rsi_window: '#f43f5e',
     atr_window: '#10b981', sma_window: '#f59e0b', std_window: '#8b5cf6',
-    bb_window: '#34d399', bb_std: '#34d399', macd_fast: '#06b6d4', macd_signal: '#ec4899',
-    williams_window: '#fbbf24', tenkan_sen: '#f87171', kijun_sen: '#60a5fa', span_a: '#34d399', span_b: '#f472b6'
+    bb_window: '#34d399', bb_std: '#34d399', macd_fast: '#06b6d4', macd_signal: '#ec4899'
 };
 
 const pageConfigs = [
     { name: 'Trend Indicators', params: ['ma_window', 'ema_span', 'rsi_window'] },
     { name: 'Volatility & Stats', params: ['atr_window', 'sma_window', 'std_window'] },
     { name: 'Bollinger Bands', params: ['bb_window', 'bb_std'] },
-    { name: 'MACD Analysis', params: ['macd_fast', 'macd_signal'] },
-    { name: 'Premium Insights', params: ['williams_window'] }
+    { name: 'MACD Analysis', params: ['macd_fast', 'macd_signal'] }
 ];
 
 const paramMeta = {
@@ -43,8 +40,7 @@ const paramMeta = {
     bb_window: { label: 'BB Window', min: 2, max: 200, step: 1, tooltip: 'Bollinger Bands use a central average with upper and lower bands that expand and contract as volatility changes.' },
     bb_std: { label: 'BB Std Dev', min: 0.1, max: 5, step: 0.1, tooltip: 'Sets the standard deviation multiplier for the Bollinger Bands width. A higher value makes the bands wider, capturing more price data.' },
     macd_fast: { label: 'MACD Fast', min: 1, max: 100, step: 1, tooltip: 'The shorter period used to calculate the MACD line, identifying quick momentum shifts in price movement.' },
-    macd_signal: { label: 'MACD Signal', min: 1, max: 100, step: 1, tooltip: 'A moving average of the MACD line itself. Crosses between the MACD and Signal lines are used as buy/sell indicators.' },
-    williams_window: { label: 'Williams %R', min: 2, max: 100, step: 1, tooltip: 'Williams %R is a momentum indicator that measures overbought and oversold levels, similar to a stochastic oscillator.' }
+    macd_signal: { label: 'MACD Signal', min: 1, max: 100, step: 1, tooltip: 'A moving average of the MACD line itself. Crosses between the MACD and Signal lines are used as buy/sell indicators.' }
 };
 
 const getEl = (id) => document.getElementById(id);
@@ -176,7 +172,7 @@ async function init() {
 
 async function initDashboard() {
     getEl('prevPage').onclick = () => { if (currentPage > 1) { currentPage--; updatePage(); } };
-    getEl('nextPage').onclick = () => { if (currentPage < 5) { currentPage++; updatePage(); } };
+    getEl('nextPage').onclick = () => { if (currentPage < 4) { currentPage++; updatePage(); } };
 
     getEl('themeToggle').onclick = () => {
         const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
@@ -289,9 +285,9 @@ async function loadStockList(selectedTicker = null) {
 }
 
 function updatePage() {
-    getEl('pageIndicator').innerText = `Page ${currentPage} of 5`;
+    getEl('pageIndicator').innerText = `Page ${currentPage} of 4`;
     getEl('prevPage').disabled = (currentPage === 1);
-    getEl('nextPage').disabled = (currentPage === 5);
+    getEl('nextPage').disabled = (currentPage === 4);
     renderParams();
     if (stockData) renderChart();
 }
@@ -358,15 +354,6 @@ async function fetchData() {
 
         const res = await authFetch(`${API_BASE_URL}/api/analyze?${queryParams.toString()}`);
         stockData = await res.json();
-
-        // Update Advice
-        const latest = stockData.data[stockData.data.length - 1];
-        if (latest && latest.Advice) {
-            const badge = getEl('adviceContainer');
-            badge.innerText = `Advice: ${latest.Advice}`;
-            badge.className = 'advice-badge ' + latest.Advice.toLowerCase().replace(' ', '-');
-        }
-
         renderChart();
         renderMiniChart();
     } catch (e) { console.error("Fetch Error:", e); }
@@ -400,7 +387,7 @@ function renderChart() {
         const val = parameterValues[p];
         const color = parameterColors[p];
         let keys = [];
-        let yAxis = (p === 'rsi_window' || p === 'williams_window' ? 'y1' : 'y');
+        let yAxis = (p === 'rsi_window' ? 'y1' : 'y');
 
         if (p === 'ma_window') keys = [`MA_${val}`];
         else if (p === 'ema_span') keys = [`EMA_${val}`];
@@ -411,7 +398,6 @@ function renderChart() {
         else if (p === 'bb_window') keys = [`Upper_BB_${val}`, `Lower_BB_${val}`];
         else if (p === 'macd_fast') keys = ['MACD'];
         else if (p === 'macd_signal') keys = ['MACD_Signal'];
-        else if (p === 'williams_window') keys = [`WilliamsR_${val}`];
 
         keys.forEach(key => {
             if (stockData.data[0] && stockData.data[0][key] !== undefined) {
@@ -433,33 +419,6 @@ function renderChart() {
         });
     });
 
-    // Special: Ichimoku (always plotted on Page 5)
-    if (currentPage === 5) {
-        const ichiKeys = [
-            { k: 'Tenkan_Sen', c: parameterColors.tenkan_sen },
-            { k: 'Kijun_Sen', c: parameterColors.kijun_sen },
-            { k: 'Senkou_Span_A', c: parameterColors.span_a },
-            { k: 'Senkou_Span_B', c: parameterColors.span_b }
-        ];
-        ichiKeys.forEach(item => {
-            if (stockData.data[0] && stockData.data[0][item.k] !== undefined) {
-                datasets.push({
-                    type: 'line',
-                    label: item.k,
-                    data: stockData.data.map(d => ({
-                        x: luxon.DateTime.fromISO(d.Date).valueOf(),
-                        y: d[item.k]
-                    })),
-                    borderColor: item.c,
-                    borderWidth: 1,
-                    pointRadius: 0,
-                    showLine: true,
-                    yAxisID: 'y'
-                });
-            }
-        });
-    }
-
     if (chartInstance) chartInstance.destroy();
     chartInstance = new Chart(ctx, {
         type: isCandle ? 'candlestick' : 'line',
@@ -474,14 +433,7 @@ function renderChart() {
                     ticks: { maxTicksLimit: 8, color: '#8b949e' }, grid: { color: '#30363d' }
                 },
                 y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
-                y1: {
-                    display: (currentPage === 1 || currentPage === 5),
-                    position: 'right',
-                    min: currentPage === 5 ? -100 : 0,
-                    max: currentPage === 5 ? 0 : 100,
-                    grid: { drawOnChartArea: false },
-                    ticks: { color: '#8b949e' }
-                }
+                y1: { display: (currentPage === 1), position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { color: '#8b949e' } }
             },
             plugins: {
                 legend: {
