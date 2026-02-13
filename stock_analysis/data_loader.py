@@ -1,44 +1,70 @@
 import pandas as pd
 import os
+from typing import List, Dict
 
 class DataLoader:
-    def __init__(self, data_dir: str = "."):
-        self.data_dir = data_dir
-        self.tickers = {}
-        self.refresh_tickers()
+    def __init__(self, public_data_dir: str = "./data/public", users_data_dir: str = "./data/users"):
+        self.public_data_dir = public_data_dir
+        self.users_data_dir = users_data_dir
 
-    def refresh_tickers(self):
-        self.tickers = {}
-        for file in os.listdir(self.data_dir):
+    def _get_tickers_from_dir(self, directory: str) -> List[str]:
+        tickers = []
+        if not os.path.exists(directory):
+            return tickers
+        for file in os.listdir(directory):
             if file.endswith("_raw.csv"):
-                ticker_name = file.replace("_raw.csv", "")
-                self.tickers[ticker_name] = ticker_name
-            elif file.endswith(".csv") and not file.endswith("_processed.csv"):
-                ticker_name = file.replace(".csv", "")
-                self.tickers[ticker_name] = ticker_name
+                tickers.append(file.replace("_raw.csv", ""))
+            elif file.endswith(".csv") and not "processed" in file:
+                tickers.append(file.replace(".csv", ""))
+        return tickers
 
-    def load_data(self, stock_name: str) -> pd.DataFrame:
-        if stock_name not in self.tickers:
-            self.refresh_tickers()
-            if stock_name not in self.tickers:
-                raise ValueError(f"Stock {stock_name} not found. Available: {list(self.tickers.keys())}")
+    def get_available_tickers(self, username: str = None) -> List[str]:
+        public_tickers = self._get_tickers_from_dir(self.public_data_dir)
+        user_tickers = []
+        if username:
+            user_dir = os.path.join(self.users_data_dir, username)
+            if os.path.exists(user_dir):
+                user_tickers = self._get_tickers_from_dir(user_dir)
         
-        ticker = self.tickers[stock_name]
+        # Combine unique tickers
+        return sorted(list(set(public_tickers + user_tickers)))
+
+    def load_data(self, stock_name: str, username: str = None) -> pd.DataFrame:
+        # Check user directory first if username is provided
+        file_path = None
         
-        file_path_raw = os.path.join(self.data_dir, f"{ticker}_raw.csv")
-        file_path_direct = os.path.join(self.data_dir, f"{ticker}.csv")
+        if username:
+            user_dir = os.path.join(self.users_data_dir, username)
+            potential_paths = [
+                os.path.join(user_dir, f"{stock_name}_raw.csv"),
+                os.path.join(user_dir, f"{stock_name}.csv")
+            ]
+            for p in potential_paths:
+                if os.path.exists(p):
+                    file_path = p
+                    break
         
-        if os.path.exists(file_path_raw):
-            file_path = file_path_raw
-        elif os.path.exists(file_path_direct):
-            file_path = file_path_direct
-        else:
-             raise FileNotFoundError(f"File not found for {ticker}")
-             
+        # If not found in user dir, check public dir
+        if not file_path:
+            potential_paths = [
+                os.path.join(self.public_data_dir, f"{stock_name}_raw.csv"),
+                os.path.join(self.public_data_dir, f"{stock_name}.csv")
+            ]
+            for p in potential_paths:
+                if os.path.exists(p):
+                    file_path = p
+                    break
+        
+        if not file_path:
+             raise ValueError(f"Stock {stock_name} not found.")
+
         df = pd.read_csv(file_path)
-        
-       
         return df
 
-    def add_ticker(self, name: str, file_name: str):
-        self.tickers[name] = name
+    def save_user_file(self, username: str, filename: str, content: bytes):
+        user_dir = os.path.join(self.users_data_dir, username)
+        os.makedirs(user_dir, exist_ok=True)
+        file_path = os.path.join(user_dir, filename)
+        with open(file_path, "wb") as f:
+            f.write(content)
+        return filename.replace(".csv", "").replace("_raw", "")

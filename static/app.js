@@ -1,9 +1,11 @@
+console.log("Stock Dashboard App v3 Loaded");
 let chartInstance = null;
 let miniChartInstance = null;
 let fullChartInstance = null;
 let stockData = null;
 let currentPage = 1;
-let currentChartType = 'line';
+let currentChartType = 'candle';
+let AUTH_TOKEN = localStorage.getItem('token');
 
 const parameterValues = {
     ma_window: 30, ema_span: 14, rsi_window: 14,
@@ -39,7 +41,132 @@ const paramMeta = {
 
 const getEl = (id) => document.getElementById(id);
 
+async function authFetch(url, options = {}) {
+    if (!AUTH_TOKEN) {
+        showAuth(true);
+        throw new Error("No auth token");
+    }
+
+    options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${AUTH_TOKEN}`
+    };
+
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+    return res;
+}
+
+function logout() {
+    localStorage.removeItem('token');
+    AUTH_TOKEN = null;
+    showAuth(true);
+}
+
+function showAuth(show) {
+    const overlay = getEl('authOverlay');
+    if (show) overlay.classList.add('active');
+    else overlay.classList.remove('active');
+}
+
+async function handleAuth() {
+    const username = getEl('username').value;
+    const password = getEl('password').value;
+    const errorEl = getEl('authError');
+    const isRegister = getEl('authBtn').innerText === 'Register';
+
+    if (!username || !password) {
+        errorEl.innerText = "Please enter username and password";
+        return;
+    }
+
+    try {
+        let res;
+        if (isRegister) {
+            res = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Registration failed");
+            }
+            // Auto login after register
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
+            res = await fetch('/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            });
+        } else {
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
+            res = await fetch('/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            });
+        }
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Login failed");
+        }
+
+        const data = await res.json();
+        AUTH_TOKEN = data.access_token;
+        localStorage.setItem('token', AUTH_TOKEN);
+        showAuth(false);
+        errorEl.innerText = "";
+        await initDashboard();
+
+    } catch (e) {
+        errorEl.innerText = e.message;
+    }
+}
+
 async function init() {
+    // Auth Event Listeners
+    getEl('authBtn').onclick = handleAuth;
+    getEl('closeAuthBtn').onclick = () => {
+        if (!AUTH_TOKEN) {
+            alert("Please login or register to access the dashboard.");
+            return;
+        }
+        showAuth(false);
+    };
+    getEl('authSwitchBtn').onclick = (e) => {
+        e.preventDefault();
+        const isLogin = getEl('authTitle').innerText === 'Login';
+        if (isLogin) {
+            getEl('authTitle').innerText = 'Register';
+            getEl('authBtn').innerText = 'Register';
+            getEl('authSwitchText').innerText = 'Already have an account?';
+            getEl('authSwitchBtn').innerText = 'Login';
+        } else {
+            getEl('authTitle').innerText = 'Login';
+            getEl('authBtn').innerText = 'Login';
+            getEl('authSwitchText').innerText = "Don't have an account?";
+            getEl('authSwitchBtn').innerText = 'Register';
+        }
+        getEl('authError').innerText = "";
+    };
+
+    if (!AUTH_TOKEN) {
+        showAuth(true);
+    } else {
+        await initDashboard();
+    }
+}
+
+async function initDashboard() {
     getEl('prevPage').onclick = () => { if (currentPage > 1) { currentPage--; updatePage(); } };
     getEl('nextPage').onclick = () => { if (currentPage < 4) { currentPage++; updatePage(); } };
 
@@ -47,10 +174,35 @@ async function init() {
         const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
         document.body.dataset.theme = theme;
         getEl('themeToggle').innerHTML = theme === 'dark' ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
+        renderChart();
     };
 
     getEl('bgColorPicker').oninput = (e) => {
-        document.documentElement.style.setProperty('--bg-color', e.target.value);
+        document.body.style.setProperty('--bg-color', e.target.value);
+    };
+
+    // Profile dropdown
+    getEl('profileBtn').onclick = (e) => {
+        e.stopPropagation();
+        getEl('profileDropdown').classList.toggle('active');
+    };
+
+    document.addEventListener('click', (e) => {
+        const dropdown = getEl('profileDropdown');
+        if (dropdown && !getEl('profileContainer')?.contains(e.target)) {
+            dropdown.classList.remove('active');
+        }
+    });
+
+    getEl('logoutBtn').onclick = () => {
+        logout();
+    };
+
+    getEl('changePasswordBtn').onclick = () => {
+        const newPassword = prompt("Enter new password:");
+        if (newPassword) {
+            alert("Password change functionality coming soon!");
+        }
     };
 
     getEl('csvUpload').onchange = async (e) => {
@@ -59,7 +211,7 @@ async function init() {
         const formData = new FormData();
         formData.append('file', file);
         try {
-            const res = await fetch('/api/upload-csv', { method: 'POST', body: formData });
+            const res = await authFetch('/api/upload-csv', { method: 'POST', body: formData });
             const data = await res.json();
             alert(`Imported ${data.ticker}`);
             await loadStockList(data.ticker);
@@ -74,7 +226,22 @@ async function init() {
         const end = getEl('end-date').value;
         if (start) params.append('start_date', start);
         if (end) params.append('end_date', end);
-        window.open(`/api/export-csv?${params.toString()}`, '_blank');
+
+        // Ensure export uses token (download link trick)
+        fetch(`/api/export-csv?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+        })
+            .then(response => response.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${stock}_processed.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            })
+            .catch(err => alert("Export failed"));
     };
 
     getEl('fullscreenBtn').onclick = () => { getEl('stockChartModal').classList.add('active'); renderFullChart(); };
@@ -87,6 +254,8 @@ async function init() {
             btn.classList.add('active');
             currentChartType = btn.dataset.type;
             renderChart();
+            renderMiniChart();
+            if (getEl('stockChartModal').classList.contains('active')) renderFullChart();
         };
     });
 
@@ -95,7 +264,7 @@ async function init() {
 
 async function loadStockList(selectedTicker = null) {
     try {
-        const res = await fetch('/api/stocks');
+        const res = await authFetch('/api/stocks');
         const data = await res.json();
         const select = getEl('stock-select');
         select.innerHTML = data.stocks.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -179,7 +348,7 @@ async function fetchData() {
         if (start) queryParams.append('start_date', start);
         if (end) queryParams.append('end_date', end);
 
-        const res = await fetch(`/api/analyze?${queryParams.toString()}`);
+        const res = await authFetch(`/api/analyze?${queryParams.toString()}`);
         stockData = await res.json();
         renderChart();
         renderMiniChart();
@@ -189,8 +358,25 @@ async function fetchData() {
 function renderChart() {
     if (!stockData || !stockData.data) return;
     const ctx = getEl('stockChart').getContext('2d');
-    const labels = stockData.data.map(d => d.Date);
     const datasets = [];
+
+    const isDash = (currentChartType === 'dash');
+    const isCandle = (currentChartType === 'candle');
+
+    // Add main price data
+    if (isCandle) {
+        datasets.push({
+            type: 'candlestick',
+            label: 'Price',
+            data: stockData.data.map(d => ({
+                x: luxon.DateTime.fromISO(d.Date).valueOf(),
+                o: d.Open, h: d.High, l: d.Low, c: d.Close
+            })),
+            color: { up: '#26a69a', down: '#ef5350', unchanged: '#888' },
+            borderColor: { up: '#26a69a', down: '#ef5350', unchanged: '#888' },
+            yAxisID: 'y'
+        });
+    }
 
     const config = pageConfigs[currentPage - 1];
     config.params.forEach(p => {
@@ -205,24 +391,24 @@ function renderChart() {
         else if (p === 'atr_window') keys = [`ATR_${val}`];
         else if (p === 'sma_window') keys = [`SMA_${val}`];
         else if (p === 'std_window') keys = [`STD_${val}`];
-        else if (p === 'bb_window') {
-            keys = [`Upper_BB_${val}`, `Lower_BB_${val}`];
-        }
+        else if (p === 'bb_window') keys = [`Upper_BB_${val}`, `Lower_BB_${val}`];
         else if (p === 'macd_fast') keys = ['MACD'];
         else if (p === 'macd_signal') keys = ['MACD_Signal'];
 
         keys.forEach(key => {
             if (stockData.data[0] && stockData.data[0][key] !== undefined) {
-                const isDash = (currentChartType === 'dash');
                 datasets.push({
+                    type: 'line',
                     label: key,
-                    data: stockData.data.map(d => d[key]),
+                    data: stockData.data.map(d => ({
+                        x: luxon.DateTime.fromISO(d.Date).valueOf(),
+                        y: d[key]
+                    })),
                     borderColor: color,
-                    borderWidth: isDash ? 1 : (key.includes('_BB_') ? 1 : 2),
-                    borderDash: isDash ? [2, 2] : (key.includes('_BB_') ? [5, 5] : []),
-                    pointRadius: (currentChartType === 'scatter' ? 1 : 0),
-                    pointHoverRadius: (currentChartType === 'scatter' ? 2 : 0),
-                    showLine: (currentChartType !== 'scatter'),
+                    borderWidth: isDash ? 1 : 1.5,
+                    borderDash: (currentChartType === 'dash') ? [5, 5] : [],
+                    pointRadius: 0,
+                    showLine: true,
                     yAxisID: yAxis
                 });
             }
@@ -231,50 +417,169 @@ function renderChart() {
 
     if (chartInstance) chartInstance.destroy();
     chartInstance = new Chart(ctx, {
-        type: 'line', data: { labels, datasets },
+        type: isCandle ? 'candlestick' : 'line',
+        data: { datasets },
         options: {
             animation: false, responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             scales: {
-                x: { ticks: { maxTicksLimit: 8, color: '#8b949e' }, grid: { color: '#30363d' } },
+                x: {
+                    type: 'time',
+                    time: { unit: 'day', displayFormats: { day: 'yyyy-MM-dd' } },
+                    ticks: { maxTicksLimit: 8, color: '#8b949e' }, grid: { color: '#30363d' }
+                },
                 y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
                 y1: { display: (currentPage === 1), position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { color: '#8b949e' } }
             },
             plugins: {
-                legend: { labels: { color: '#8b949e', boxWidth: 10, font: { size: 10 } } },
-                tooltip: { backgroundColor: 'rgba(22, 27, 34, 0.9)', titleColor: '#f0f6fc', bodyColor: '#8b949e' }
+                legend: {
+                    labels: {
+                        color: '#8b949e',
+                        boxWidth: 10,
+                        font: { size: 10 },
+                        filter: function (item, chart) {
+                            return !item.text.includes('Price') && !item.text.includes('Close Price');
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(22, 27, 34, 0.9)',
+                    titleColor: '#f0f6fc',
+                    bodyColor: '#8b949e',
+                    callbacks: {
+                        title: function (context) {
+                            if (context[0] && context[0].parsed) {
+                                const date = new Date(context[0].parsed.x);
+                                return date.toISOString().split('T')[0];
+                            }
+                            return '';
+                        },
+                        label: function (context) {
+                            if (context.dataset.type === 'candlestick') {
+                                const d = context.raw;
+                                return `Open: ${d.o.toFixed(3)} High: ${d.h.toFixed(3)} Low: ${d.l.toFixed(3)} Close: ${d.c.toFixed(3)}`;
+                            }
+
+                            let label = context.dataset.label || '';
+                            if (label) label += ': ';
+                            if (context.parsed.y !== null) {
+                                label += context.parsed.y.toFixed(3);
+                            }
+                            return label;
+                        }
+                    }
+                }
             }
         }
     });
 }
 
 function renderMiniChart() {
+    if (!stockData || !stockData.data) return;
     const ctx = getEl('miniStockChart').getContext('2d');
     const data = stockData.data.slice(-30);
+    const isDash = (currentChartType === 'dash');
+    const isCandle = (currentChartType === 'candle');
+
+    const datasets = [];
+    if (isCandle) {
+        datasets.push({
+            type: 'candlestick',
+            data: data.map(d => ({
+                x: luxon.DateTime.fromISO(d.Date).valueOf(),
+                o: d.Open, h: d.High, l: d.Low, c: d.Close
+            })),
+            background: { up: '#26a69a', down: '#ef5350', unchanged: '#888' },
+            border: { up: '#26a69a', down: '#ef5350', unchanged: '#888' },
+            borderWidth: 1
+        });
+    } else {
+        datasets.push({
+            type: 'line',
+            data: data.map(d => ({
+                x: luxon.DateTime.fromISO(d.Date).valueOf(),
+                y: d.Close
+            })),
+            borderColor: '#1f6feb',
+            borderWidth: isDash ? 1 : 2,
+            borderDash: isDash ? [5, 5] : [],
+            pointRadius: 0
+        });
+    }
+
     if (miniChartInstance) miniChartInstance.destroy();
     miniChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels: data.map(d => d.Date), datasets: [{ data: data.map(d => d.Close), borderColor: '#1f6feb', borderWidth: 2, pointRadius: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: false }, scales: { x: { display: false }, y: { display: false } } }
+        type: isCandle ? 'candlestick' : 'line',
+        data: { datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: false,
+                tooltip: { enabled: false }
+            },
+            scales: {
+                x: { type: 'time', display: false },
+                y: { display: false }
+            }
+        }
     });
 }
 
 function renderFullChart() {
+    if (!stockData || !stockData.data) return;
     const ctx = getEl('fullStockChart').getContext('2d');
+    const isDash = (currentChartType === 'dash');
+    const isCandle = (currentChartType === 'candle');
+
+    const datasets = [];
+    if (isCandle) {
+        datasets.push({
+            type: 'candlestick',
+            label: 'Price',
+            data: stockData.data.map(d => ({
+                x: luxon.DateTime.fromISO(d.Date).valueOf(),
+                o: d.Open, h: d.High, l: d.Low, c: d.Close
+            })),
+            color: { up: '#26a69a', down: '#ef5350', unchanged: '#888' },
+            borderColor: { up: '#26a69a', down: '#ef5350', unchanged: '#888' },
+            yAxisID: 'y'
+        });
+    } else {
+        datasets.push({
+            type: 'line',
+            label: 'Price',
+            data: stockData.data.map(d => ({
+                x: luxon.DateTime.fromISO(d.Date).valueOf(),
+                y: d.Close
+            })),
+            borderColor: '#f0f6fc',
+            borderWidth: isDash ? 1 : 2,
+            borderDash: isDash ? [5, 5] : [],
+            pointRadius: 0,
+            yAxisID: 'y'
+        });
+    }
+
+    datasets.push({
+        label: 'Volume',
+        data: stockData.data.map(d => ({
+            x: luxon.DateTime.fromISO(d.Date).valueOf(),
+            y: d.Volume
+        })),
+        type: 'bar',
+        backgroundColor: 'rgba(31, 111, 235, 0.3)',
+        yAxisID: 'yVolume'
+    });
+
     if (fullChartInstance) fullChartInstance.destroy();
     fullChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: stockData.data.map(d => d.Date),
-            datasets: [
-                { label: 'Price', data: stockData.data.map(d => d.Close), borderColor: '#f0f6fc', borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
-                { label: 'Volume', data: stockData.data.map(d => d.Volume), type: 'bar', backgroundColor: 'rgba(31, 111, 235, 0.3)', yAxisID: 'yVolume', pointRadius: 0 }
-            ]
-        },
+        type: isCandle ? 'candlestick' : 'line',
+        data: { datasets },
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             scales: {
+                x: { type: 'time', ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
                 y: { type: 'linear', position: 'left', ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
                 yVolume: { type: 'linear', position: 'right', display: false, grid: { display: false } }
             },
@@ -283,20 +588,27 @@ function renderFullChart() {
                 tooltip: {
                     enabled: true,
                     callbacks: {
+                        title: function (context) {
+                            if (context[0] && context[0].parsed) {
+                                const date = new Date(context[0].parsed.x);
+                                return date.toISOString().split('T')[0];
+                            }
+                            return '';
+                        },
                         label: function (context) {
                             const d = stockData.data[context.dataIndex];
-                            if (context.dataset.label === 'Price') {
+                            if (context.dataset.type === 'candlestick' || context.dataset.label === 'Price') {
                                 return [
-                                    `Open: ${d.Open.toLocaleString()}`,
-                                    `High: ${d.High.toLocaleString()}`,
-                                    `Low: ${d.Low.toLocaleString()}`,
-                                    `Close: ${d.Close.toLocaleString()}`
+                                    `Open: ${d.Open.toFixed(3)}`,
+                                    `High: ${d.High.toFixed(3)}`,
+                                    `Low: ${d.Low.toFixed(3)}`,
+                                    `Close: ${d.Close.toFixed(3)}`
                                 ];
                             }
                             if (context.dataset.label === 'Volume') {
                                 return `Volume: ${d.Volume.toLocaleString()}`;
                             }
-                            return context.parsed.y.toLocaleString();
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(3)}`;
                         }
                     }
                 }

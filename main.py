@@ -1,14 +1,19 @@
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
-from stock_analysis import DataLoader, TechnicalIndicators
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from stock_analysis.data_loader import DataLoader
+from stock_analysis.indicators import TechnicalIndicators
+from stock_analysis.models import User, UserCreate, Token, UserInDB
+from stock_analysis.auth import UserManager, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY, ALGORITHM
+from jose import JWTError, jwt
+from datetime import timedelta
 import pandas as pd
 import numpy as np
 import json
 import os
 import io
-from datetime import datetime
 
 app = FastAPI()
 
@@ -20,9 +25,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-data_loader = DataLoader(data_dir=".")
+# Authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+user_manager = UserManager()
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    user = user_manager.get_user(username)
+    if user is None:
+        raise credentials_exception
+    return user
+
+data_loader = DataLoader(public_data_dir="./data/public", users_data_dir="./data/users")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.post("/register", response_model=User)
+async def register(user: UserCreate):
+    try:
+        if user_manager.get_user(user.username):
+            raise HTTPException(status_code=400, detail="Username already registered")
+        created_user = user_manager.create_user(user)
+        return User(username=created_user.username, disabled=created_user.disabled)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = user_manager.get_user(form_data.username)
+    if not user or not user_manager.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/")
 async def read_root():
@@ -30,10 +82,10 @@ async def read_root():
     return FileResponse("static/index.html")
 
 @app.get("/api/stocks")
-def get_stocks():
-    """Return available stock options."""
-    data_loader.refresh_tickers()
-    return {"stocks": list(data_loader.tickers.keys())}
+def get_stocks(current_user: User = Depends(get_current_user)):
+    """Return available stock options for the current user."""
+    stocks = data_loader.get_available_tickers(current_user.username)
+    return {"stocks": stocks}
 
 @app.get("/api/analyze")
 def analyze_stock(
@@ -50,10 +102,11 @@ def analyze_stock(
     macd_slow: int = Query(26, ge=1, le=100),
     macd_signal: int = Query(9, ge=1, le=100),
     start_date: str = Query(None),
-    end_date: str = Query(None)
+    end_date: str = Query(None),
+    current_user: User = Depends(get_current_user)
 ):
     try:
-        df = data_loader.load_data(stock)
+        df = data_loader.load_data(stock, current_user.username)
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -83,15 +136,14 @@ def analyze_stock(
     return {"stock": stock, "data": data_records}
 
 @app.post("/api/upload-csv")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
     try:
-        file_path = os.path.join(".", file.filename)
         content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-        data_loader.refresh_tickers()
-        ticker_name = file.filename.replace('.csv', '').replace('_raw', '')
-        return {"message": "Success", "ticker": ticker_name}
+        saved_name = data_loader.save_user_file(current_user.username, file.filename, content)
+        return {"message": "Success", "ticker": saved_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -104,10 +156,11 @@ def export_csv(
     sma_window: int = Query(20), std_window: int = Query(20),
     macd_fast: int = Query(12), macd_slow: int = Query(26),
     macd_signal: int = Query(9), start_date: str = Query(None),
-    end_date: str = Query(None)
+    end_date: str = Query(None),
+    current_user: User = Depends(get_current_user)
 ):
     try:
-        df = data_loader.load_data(stock)
+        df = data_loader.load_data(stock, current_user.username)
         date_col = next((c for c in df.columns if c.lower() == 'date'), None)
         if date_col and (start_date or end_date):
             df[date_col] = pd.to_datetime(df[date_col])
