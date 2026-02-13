@@ -7,6 +7,10 @@ let currentPage = 1;
 let currentChartType = 'candle';
 let AUTH_TOKEN = localStorage.getItem('token');
 
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? ''
+    : 'https://stock-analysis-backend-h6u5.onrender.com'; // Placeholder, user will need to update this
+
 const parameterValues = {
     ma_window: 30, ema_span: 14, rsi_window: 14,
     bb_window: 20, bb_std: 2.0, atr_window: 14,
@@ -86,7 +90,7 @@ async function handleAuth() {
     try {
         let res;
         if (isRegister) {
-            res = await fetch('/register', {
+            res = await fetch(`${API_BASE_URL}/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -99,7 +103,7 @@ async function handleAuth() {
             const formData = new URLSearchParams();
             formData.append('username', username);
             formData.append('password', password);
-            res = await fetch('/token', {
+            res = await fetch(`${API_BASE_URL}/token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: formData
@@ -108,7 +112,7 @@ async function handleAuth() {
             const formData = new URLSearchParams();
             formData.append('username', username);
             formData.append('password', password);
-            res = await fetch('/token', {
+            res = await fetch(`${API_BASE_URL}/token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: formData
@@ -211,7 +215,7 @@ async function initDashboard() {
         const formData = new FormData();
         formData.append('file', file);
         try {
-            const res = await authFetch('/api/upload-csv', { method: 'POST', body: formData });
+            const res = await authFetch(`${API_BASE_URL}/api/upload-csv`, { method: 'POST', body: formData });
             const data = await res.json();
             alert(`Imported ${data.ticker}`);
             await loadStockList(data.ticker);
@@ -228,7 +232,7 @@ async function initDashboard() {
         if (end) params.append('end_date', end);
 
         // Ensure export uses token (download link trick)
-        fetch(`/api/export-csv?${params.toString()}`, {
+        fetch(`${API_BASE_URL}/api/export-csv?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
         })
             .then(response => response.blob())
@@ -264,7 +268,7 @@ async function initDashboard() {
 
 async function loadStockList(selectedTicker = null) {
     try {
-        const res = await authFetch('/api/stocks');
+        const res = await authFetch(`${API_BASE_URL}/api/stocks`);
         const data = await res.json();
         const select = getEl('stock-select');
         select.innerHTML = data.stocks.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -348,7 +352,7 @@ async function fetchData() {
         if (start) queryParams.append('start_date', start);
         if (end) queryParams.append('end_date', end);
 
-        const res = await authFetch(`/api/analyze?${queryParams.toString()}`);
+        const res = await authFetch(`${API_BASE_URL}/api/analyze?${queryParams.toString()}`);
         stockData = await res.json();
         renderChart();
         renderMiniChart();
