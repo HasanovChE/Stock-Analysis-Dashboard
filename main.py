@@ -129,8 +129,14 @@ def analyze_stock(
     df = TechnicalIndicators.add_atr(df, window=atr_window)
     df = TechnicalIndicators.add_sma(df, window=sma_window)
     df = TechnicalIndicators.add_std(df, window=std_window)
+    df = TechnicalIndicators.add_williams_r(df)
+    df = TechnicalIndicators.add_obv(df)
+    df = TechnicalIndicators.add_ichimoku(df)
 
-    df = df.replace([np.inf, -np.inf], np.nan).fillna(value=np.nan)
+    from stock_analysis.strategies import StrategyEngine
+    df = StrategyEngine.generate_signals(df)
+
+    df = df.replace([np.inf, -np.inf], np.nan).fillna(value=0)
     data_records = json.loads(df.to_json(orient='records'))
     
     return {"stock": stock, "data": data_records}
