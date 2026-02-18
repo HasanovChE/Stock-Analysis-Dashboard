@@ -79,11 +79,12 @@ function showAuth(show) {
 async function handleAuth() {
     const username = getEl('username').value;
     const password = getEl('password').value;
+    const email = getEl('regEmail').value;
     const errorEl = getEl('authError');
     const isRegister = getEl('authBtn').innerText === 'Register';
 
-    if (!username || !password) {
-        errorEl.innerText = "Please enter username and password";
+    if (!username || !password || (isRegister && !email)) {
+        errorEl.innerText = isRegister ? "Please enter all fields" : "Please enter username and password";
         return;
     }
 
@@ -93,7 +94,7 @@ async function handleAuth() {
             res = await fetch(`${API_BASE_URL}/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username, password, email })
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -129,8 +130,93 @@ async function handleAuth() {
         localStorage.setItem('token', AUTH_TOKEN);
         showAuth(false);
         errorEl.innerText = "";
+        getEl('username').value = "";
+        getEl('password').value = "";
+        getEl('regEmail').value = "";
         await initDashboard();
 
+    } catch (e) {
+        errorEl.innerText = e.message;
+    }
+}
+
+function showAuthForm(variant) {
+    const forms = ['authLoginForm', 'authForgotForm', 'authResetForm'];
+    forms.forEach(f => getEl(f).style.display = 'none');
+    getEl('regExtraFields').style.display = 'none';
+    getEl('authError').innerText = "";
+
+    if (variant === 'login') {
+        getEl('authLoginForm').style.display = 'block';
+        getEl('authTitle').innerText = 'Login';
+        getEl('authBtn').innerText = 'Login';
+        getEl('authSwitchText').innerText = "Don't have an account?";
+        getEl('authSwitchBtn').innerText = 'Register';
+    } else if (variant === 'register') {
+        getEl('authLoginForm').style.display = 'block';
+        getEl('regExtraFields').style.display = 'block';
+        getEl('authTitle').innerText = 'Register';
+        getEl('authBtn').innerText = 'Register';
+        getEl('authSwitchText').innerText = 'Already have an account?';
+        getEl('authSwitchBtn').innerText = 'Login';
+    } else if (variant === 'forgot') {
+        getEl('authForgotForm').style.display = 'block';
+        getEl('authTitle').innerText = 'Forgot Password';
+    } else if (variant === 'reset') {
+        getEl('authResetForm').style.display = 'block';
+        getEl('authTitle').innerText = 'Reset Password';
+    }
+}
+
+async function handleForgotPassword() {
+    const username = getEl('forgotUsername').value;
+    const email = getEl('forgotEmail').value;
+    const errorEl = getEl('authError');
+    if (!username || !email) {
+        errorEl.innerText = "Please enter both username and email";
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/forgot-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Request failed");
+        }
+        alert("Code sent! Please check your email (or terminal).");
+        showAuthForm('reset');
+    } catch (e) {
+        errorEl.innerText = e.message;
+    }
+}
+
+async function handleResetPassword() {
+    const email = getEl('forgotEmail').value;
+    const code = getEl('resetCode').value;
+    const new_password = getEl('newPassword').value;
+    const errorEl = getEl('authError');
+
+    if (!code || !new_password) {
+        errorEl.innerText = "Please fill all fields";
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, code, new_password })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Reset failed");
+        }
+        alert("Password reset successfully! You can now login.");
+        showAuthForm('login');
     } catch (e) {
         errorEl.innerText = e.message;
     }
@@ -139,6 +225,21 @@ async function handleAuth() {
 async function init() {
     // Auth Event Listeners
     getEl('authBtn').onclick = handleAuth;
+    getEl('sendCodeBtn').onclick = handleForgotPassword;
+    getEl('resetPasswordBtn').onclick = handleResetPassword;
+
+    getEl('forgotPasswordBtn').onclick = (e) => {
+        e.preventDefault();
+        showAuthForm('forgot');
+    };
+
+    document.querySelectorAll('.back-to-login').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            showAuthForm('login');
+        };
+    });
+
     getEl('closeAuthBtn').onclick = () => {
         if (!AUTH_TOKEN) {
             alert("Please login or register to access the dashboard.");
@@ -146,21 +247,11 @@ async function init() {
         }
         showAuth(false);
     };
+
     getEl('authSwitchBtn').onclick = (e) => {
         e.preventDefault();
         const isLogin = getEl('authTitle').innerText === 'Login';
-        if (isLogin) {
-            getEl('authTitle').innerText = 'Register';
-            getEl('authBtn').innerText = 'Register';
-            getEl('authSwitchText').innerText = 'Already have an account?';
-            getEl('authSwitchBtn').innerText = 'Login';
-        } else {
-            getEl('authTitle').innerText = 'Login';
-            getEl('authBtn').innerText = 'Login';
-            getEl('authSwitchText').innerText = "Don't have an account?";
-            getEl('authSwitchBtn').innerText = 'Register';
-        }
-        getEl('authError').innerText = "";
+        showAuthForm(isLogin ? 'register' : 'login');
     };
 
     if (!AUTH_TOKEN) {

@@ -17,6 +17,7 @@ class UserManager:
     def __init__(self, db_file="users.json"):
         self.db_file = db_file
         self.users_db = {}
+        self.reset_codes = {} # Store {email: {"code": code, "expires": datetime}}
         self._load_users()
 
     def _load_users(self):
@@ -38,11 +39,20 @@ class UserManager:
     def get_user(self, username: str) -> Optional[UserInDB]:
         return self.users_db.get(username)
 
+    def get_user_by_email(self, email: str) -> Optional[UserInDB]:
+        for user in self.users_db.values():
+            if user.email == email:
+                return user
+        return None
+
     def create_user(self, user: UserCreate) -> UserInDB:
         if user.username in self.users_db:
             raise ValueError("User already exists")
+        for u in self.users_db.values():
+            if u.email == user.email:
+                raise ValueError("Email already registered")
         hashed_password = pwd_context.hash(user.password)
-        db_user = UserInDB(username=user.username, hashed_password=hashed_password, disabled=False)
+        db_user = UserInDB(username=user.username, email=user.email, hashed_password=hashed_password, disabled=False)
         self.users_db[user.username] = db_user
         self._save_users()
         return db_user
@@ -52,6 +62,34 @@ class UserManager:
 
     def get_password_hash(self, password):
         return pwd_context.hash(password)
+
+    def generate_reset_code(self, email: str) -> str:
+        import random
+        import string
+        code = ''.join(random.choices(string.digits, k=6))
+        self.reset_codes[email] = {
+            "code": code,
+            "expires": datetime.utcnow() + timedelta(minutes=10)
+        }
+        return code
+
+    def verify_reset_code(self, email: str, code: str) -> bool:
+        if email not in self.reset_codes:
+            return False
+        data = self.reset_codes[email]
+        if datetime.utcnow() > data["expires"]:
+            del self.reset_codes[email]
+            return False
+        return data["code"] == code
+
+    def reset_password(self, email: str, new_password: str):
+        user = self.get_user_by_email(email)
+        if not user:
+            raise ValueError("User not found")
+        user.hashed_password = self.get_password_hash(new_password)
+        self._save_users()
+        if email in self.reset_codes:
+            del self.reset_codes[email]
 
 user_manager = UserManager()
 

@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from stock_analysis.data_loader import DataLoader
 from stock_analysis.indicators import TechnicalIndicators
-from stock_analysis.models import User, UserCreate, Token, UserInDB
+from stock_analysis.models import User, UserCreate, Token, UserInDB, ForgotPasswordRequest, ResetPasswordRequest
 from stock_analysis.auth import UserManager, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY, ALGORITHM
 from jose import JWTError, jwt
 from datetime import timedelta
@@ -14,6 +14,8 @@ import numpy as np
 import json
 import os
 import io
+import requests
+from stock_analysis.email_utils import send_reset_email
 
 app = FastAPI()
 
@@ -57,7 +59,45 @@ async def register(user: UserCreate):
         if user_manager.get_user(user.username):
             raise HTTPException(status_code=400, detail="Username already registered")
         created_user = user_manager.create_user(user)
-        return User(username=created_user.username, disabled=created_user.disabled)
+        return User(username=created_user.username, email=created_user.email, disabled=created_user.disabled)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    user = user_manager.get_user_by_email(request.email)
+    if not user:
+        # For security, don't reveal if user exists, but here we'll be helpful
+        raise HTTPException(status_code=404, detail="User with this email not found")
+    
+    code = user_manager.generate_reset_code(request.email)
+    
+    # Send actual email via Mailtrap
+    success = send_reset_email(request.email, code)
+    
+    # Always print to terminal for debugging as well
+    print(f"\n--- RESET CODE GENERATED ---")
+    print(f"To: {request.email}")
+    print(f"Code: {code}")
+    print(f"Email Sent Status: {'Success' if success else 'Failed'}")
+    print(f"----------------------------\n")
+    
+    if not success:
+        # We still return success to the user so they can use the code from terminal if needed
+        # but we could also raise an error. Given the "demomailtrap.com" restriction,
+        # it might fail frequently if not configured with a real domain.
+        return {"message": "Reset code generated. (Check terminal if email delivery fails)"}
+    
+    return {"message": "Reset code sent to your email"}
+
+@app.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    if not user_manager.verify_reset_code(request.email, request.code):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+    
+    try:
+        user_manager.reset_password(request.email, request.new_password)
+        return {"message": "Password reset successfully"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -129,14 +169,8 @@ def analyze_stock(
     df = TechnicalIndicators.add_atr(df, window=atr_window)
     df = TechnicalIndicators.add_sma(df, window=sma_window)
     df = TechnicalIndicators.add_std(df, window=std_window)
-    df = TechnicalIndicators.add_williams_r(df)
-    df = TechnicalIndicators.add_obv(df)
-    df = TechnicalIndicators.add_ichimoku(df)
 
-    from stock_analysis.strategies import StrategyEngine
-    df = StrategyEngine.generate_signals(df)
-
-    df = df.replace([np.inf, -np.inf], np.nan).fillna(value=0)
+    df = df.replace([np.inf, -np.inf], np.nan).fillna(value=np.nan)
     data_records = json.loads(df.to_json(orient='records'))
     
     return {"stock": stock, "data": data_records}

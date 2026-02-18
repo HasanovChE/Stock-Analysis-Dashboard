@@ -10,6 +10,7 @@ class TokenData(BaseModel):
 
 class User(BaseModel):
     username: str
+    email: Optional[str] = None
     disabled: bool | None = None
 
 class UserInDB(User):
@@ -17,4 +18,13 @@ class UserInDB(User):
 
 class UserCreate(BaseModel):
     username: str
+    email: str
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    code: str
+    new_password: str

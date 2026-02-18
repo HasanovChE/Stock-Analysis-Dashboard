@@ -333,41 +333,6 @@ header {
   cursor: pointer;
 }
 
-.advice-badge {
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: var(--hover-bg);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  transition: all 0.3s ease;
-}
-
-.advice-badge.buy {
-  background: rgba(38, 166, 154, 0.2);
-  color: #26a69a;
-  border-color: #26a69a;
-}
-
-.advice-badge.strong-buy {
-  background: #26a69a;
-  color: white;
-  border-color: #26a69a;
-}
-
-.advice-badge.sell {
-  background: rgba(239, 83, 80, 0.2);
-  color: #ef5350;
-  border-color: #ef5350;
-}
-
-.advice-badge.strong-sell {
-  background: #ef5350;
-  color: white;
-  border-color: #ef5350;
-}
-
 .stock-chart-preview:hover {
   border-color: var(--accent-color);
 }
